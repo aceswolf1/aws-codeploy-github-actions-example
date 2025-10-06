@@ -32,7 +32,7 @@ jobs:
           aws deploy create-deployment \
             --application-name cace-codedeploy-demo-app \
             --deployment-group-name cace-codedeploy-demo-dg \
-            --s3-location bucket=demo-app-bucket-720680604205-us-east-1-da2300bc,key=demo-web-v1.zip,bundleType=zip \
+            --s3-location "bucket=demo-app-bucket-720680604205-us-east-1-da2300bc,key=demo-web-v1.zip,bundleType=zip" \
             --region us-east-1
 
         env:
