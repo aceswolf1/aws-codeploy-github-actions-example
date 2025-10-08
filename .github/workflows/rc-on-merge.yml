@@ -1,4 +1,4 @@
-name: RC on merge to main
+name: Pre-release on merge to main
 
 on:
   pull_request:
@@ -10,7 +10,7 @@ permissions:
   pull-requests: read
 
 jobs:
-  create-pre:
+  pre_release:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
@@ -25,8 +25,22 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Run rel (pre-release off main)
-        env:
-          MASTER: main
+      - name: Download upstream release tool (v2)
         run: |
-          ./rel version pre
+          curl -s -o release.sh.this https://raw.githubusercontent.com/frontedgedigital/release-management/dev/release.sh.this
+          chmod +x release.sh.this
+
+      # IMPORTANT:
+      # We use --tech 'version' so the tool reads the root ./VERSION file.
+      # We pass level 'dev' and set the pre-release token to 'pre' to get tags like 0.6.0-pre.0.
+      # We also set an empty branch prefix so the branch name is exactly the tag (0.6.0-pre.0).
+      - name: Cut pre-release (tag + matching branch)
+        env:
+          MAIN_BRANCH: main
+        run: |
+          ./release.sh.this \
+            --tech version \
+            --main "${MAIN_BRANCH}" \
+            --pre-release-token "pre" \
+            --release-branch-prefix "" \
+            dev
