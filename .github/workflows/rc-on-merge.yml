@@ -154,7 +154,11 @@ jobs:
           # Push master to remote (creates it on GitHub)
           git push origin master
           
+          # Set up tracking so git pull works
+          git branch --set-upstream-to=origin/master master
+          
           echo "✓ Master branch created on GitHub"
+          echo "✓ Tracking set up"
       
       # Step 7: Execute the release candidate creation
       - name: Create Release Candidate
@@ -177,42 +181,42 @@ jobs:
           echo "Script location: $SCRIPT_DIR/release"
           echo "=========================================="
           
-          # IMPORTANT: Update origin/master reference right before running the release script
-          # The script will do its own 'git fetch' which would show the mismatch otherwise
-          # We need to ensure that after the internal fetch, origin/master still points to origin/main
-          git fetch origin main
-          git update-ref refs/remotes/origin/master refs/remotes/origin/main
-          echo "✓ Updated origin/master to point to origin/main"
-          
-          # Configure git to push master to origin/main
-          git config push.default upstream
-          
           # Add the script directory to PATH so release script can find its dependencies
           export PATH="$SCRIPT_DIR:$PATH"
           
           # Execute the release script from root directory
-          # The scripts need to find package.json in the current directory
+          # The script now sees a real master branch on origin, so it works normally!
           # Usage: ./release <type> <release-level>
           "$SCRIPT_DIR/release" $TYPES_FORMATTED pre
       
-      # Step 8: Push changes (in case script doesn't auto-push)
-      - name: Push changes
+      # Step 8: Sync master back to main and clean up
+      - name: Sync and cleanup
         run: |
-          echo "Pushing tags and branches..."
-          # Switch back to main before pushing
+          echo "Syncing changes back to main and cleaning up..."
+          
+          # The release script created commits on master and pushed them to origin/master
+          # Now we need to get those changes to main
+          
+          # Fetch the updated master
+          git fetch origin master
+          
+          # Switch to main
           git checkout main
           
-          # Delete the temporary master branch locally (don't push it to GitHub)
-          git branch -D master || echo "Master branch already deleted"
+          # Merge the changes from master (fast-forward)
+          git merge origin/master --ff-only
           
-          # Push main branch (which now has the release commit)
-          git push origin main --no-verify || echo "Main branch already pushed"
+          # Push updated main
+          git push origin main
           
-          # Push all tags
-          git push origin --tags --no-verify || echo "Tags already pushed"
+          # Delete local master branch
+          git branch -D master
           
-          # Make sure no master branch was pushed to remote
-          git push origin --delete master 2>/dev/null || echo "No remote master branch to delete"
+          # Delete remote master branch
+          git push origin --delete master
+          
+          echo "✓ Changes synced to main"
+          echo "✓ Master branch deleted"
       
       # Step 8b: Create RC branch from the tag
       - name: Create RC branch
