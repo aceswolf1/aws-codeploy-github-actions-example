@@ -1,174 +1,248 @@
-name: Create Release Candidate
+name: Manual Branch Strategy
 
-# Trigger when a PR is merged to main
+# Allows manual triggering with custom parameters
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type (nodejs, python, image, etc. - can combine with +)'
+        required: true
+        default: 'nodejs'
+        type: string
+      
+      script_ref:
+        description: 'Branch/tag of release-management repo (master=deprecated, dev=v2.x)'
+        required: false
+        default: 'master'
+        type: string
+      
+      release_level:
+        description: 'Release level (for deprecated v1.x on master branch)'
+        required: true
+        type: choice
+        options:
+          - pre      # Creates RC (e.g., 0.6.0-pre.0)
+          - patch    # Patch release (e.g., 0.6.1)
+          - minor    # Minor release (e.g., 0.7.0)
+          - major    # Major release (e.g., 1.0.0)
+        default: 'pre'
 
 jobs:
-  create-release-candidate:
+  execute-branch-strategy:
     runs-on: ubuntu-latest
     
     permissions:
-      contents: write  # Required to create tags and branches
+      contents: write
     
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for proper versioning
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      # Step 2: Configure Git
       - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
       
-      # Step 3: Set up Node.js (required for nodejs release type)
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # Adjust to your project's Node version
+          node-version: '20'
       
-      # Step 4: Install dependencies (if package.json exists)
       - name: Install dependencies
         run: |
           if [ -f package.json ]; then
-            npm ci || npm install
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
           fi
       
-      # Step 5: Download and prepare the release script
       - name: Download release management scripts
         run: |
-          # Create a temporary directory for scripts
-          mkdir -p .release-scripts
-          cd .release-scripts
+          # Use /tmp to avoid git tracking issues
+          SCRIPT_DIR="/tmp/release-scripts-$"
+          mkdir -p "$SCRIPT_DIR"
+          cd "$SCRIPT_DIR"
           
-          # Set variables (using master for deprecated version)
-          REF="${{ vars.RELEASE_SCRIPT_REF || 'master' }}"
-          TYPES="${{ vars.RELEASE_TYPES || 'nodejs' }}"
+          REF="${{ inputs.script_ref }}"
+          TYPES="${{ inputs.release_type }}"
           
           echo "=========================================="
-          echo "Downloading scripts from ref: $REF"
-          echo "Types: $TYPES"
+          echo "Configuration:"
+          echo "  Script Ref: $REF"
+          echo "  Types: $TYPES"
+          echo "  Release Level: ${{ inputs.release_level }}"
+          echo "  Script Directory: $SCRIPT_DIR"
           echo "=========================================="
           
-          # Download the main release script
+          # Check if using deprecated version
+          if [ "$REF" = "master" ]; then
+            echo "⚠️  WARNING: Using deprecated version from 'master' branch"
+            echo "   Consider migrating to version 2.x on 'dev' branch"
+            echo ""
+          fi
+          
+          # Download scripts with error handling
+          echo "Downloading release script..."
           curl -s -f -o release https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release || {
-            echo "Failed to download release script"
+            echo "❌ Failed to download release script from ref: $REF"
             exit 1
           }
           chmod +x release
           
           # Download type-specific scripts
           for type in $TYPES; do
-            echo "Downloading release-$type"
-            curl -s -f -o release-$type https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release-$type || {
-              echo "Failed to download release-$type script"
-              exit 1
-            }
-            chmod +x release-$type
+            # Handle combined types (e.g., nodejs+image)
+            IFS='+' read -ra TYPE_ARRAY <<< "$type"
+            for single_type in "${TYPE_ARRAY[@]}"; do
+              echo "Downloading release-$single_type..."
+              curl -s -f -o release-$single_type https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release-$single_type || {
+                echo "❌ Failed to download release-$single_type"
+                exit 1
+              }
+              chmod +x release-$single_type
+            done
           done
           
-          # Download tagging script
+          # Download tag script (may not exist for all types)
+          echo "Downloading tag-nodejs (if available)..."
           curl -s -f -o tag-nodejs https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/tag-nodejs || {
-            echo "Warning: Failed to download tag-nodejs script"
+            echo "⚠️  tag-nodejs not found (may not be needed)"
           }
           chmod +x tag-nodejs 2>/dev/null || true
           
-          cd ..
+          # Save script directory for next steps
+          echo "SCRIPT_DIR=$SCRIPT_DIR" >> $GITHUB_ENV
+          
+          cd "$GITHUB_WORKSPACE"
       
-      # Step 6: Execute the release candidate creation
-      - name: Create Release Candidate
+      - name: Display script help
+        run: |
+          echo "=========================================="
+          echo "Release Script Help:"
+          echo "=========================================="
+          "$SCRIPT_DIR/release" --help || true
+      
+      - name: Execute branch strategy
         env:
           HUSKY_SKIP_HOOKS: 1
           GIT_COMMIT_OPTS: --no-verify
           GIT_PUSH_OPTS: --no-verify
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get types and format them (space to plus conversion)
-          TYPES="${{ vars.RELEASE_TYPES || 'nodejs' }}"
+          TYPES="${{ inputs.release_type }}"
+          # Convert spaces to + if multiple types (though UI input should handle this)
           TYPES_FORMATTED=$(echo -n "$TYPES" | tr ' ' '+')
+          RELEASE_LEVEL="${{ inputs.release_level }}"
           
           echo "=========================================="
-          echo "Creating Release Candidate"
-          echo "Types: $TYPES_FORMATTED"
-          echo "Release Level: pre"
+          echo "Executing Release"
+          echo "=========================================="
           echo "Working Directory: $(pwd)"
           echo "Package.json exists: $([ -f package.json ] && echo 'YES' || echo 'NO')"
-          echo "=========================================="
+          echo "Script location: $SCRIPT_DIR/release"
+          echo "Command: $SCRIPT_DIR/release $TYPES_FORMATTED $RELEASE_LEVEL"
+          echo ""
+          
+          # Add the script directory to PATH
+          export PATH="$SCRIPT_DIR:$PATH"
           
           # Execute the release script from root directory
-          # The scripts need to find package.json in the current directory
-          # Usage: ./release <type> <release-level>
-          ./.release-scripts/release $TYPES_FORMATTED pre
+          # The script needs to find package.json in current directory
+          # Syntax for deprecated v1.x: ./release <type> <release-level>
+          "$SCRIPT_DIR/release" $TYPES_FORMATTED $RELEASE_LEVEL
       
-      # Step 7: Push changes (in case script doesn't auto-push)
       - name: Push changes
         run: |
-          echo "Pushing tags and branches..."
-          git push --follow-tags --no-verify || echo "Push completed (may have been already pushed by script)"
+          echo "Ensuring all changes are pushed..."
+          git push --all --no-verify || echo "Branches already pushed"
+          git push --tags --no-verify || echo "Tags already pushed"
       
-      # Step 8: Output the created tag
+      - name: Report results
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Branch Strategy Execution Complete"
+          echo "=========================================="
+          
+          # Show latest tags
+          echo ""
+          echo "📌 Latest tags:"
+          git tag --sort=-creatordate | head -5
+          
+          # Show all branches
+          echo ""
+          echo "🌿 All branches:"
+          git branch -a | grep -v HEAD
+          
+          # Show current branch
+          echo ""
+          echo "📍 Current branch:"
+          git branch --show-current
+          
+          # Show recent commits
+          echo ""
+          echo "📝 Recent commits:"
+          git log --oneline --graph -10
+          
+          echo "=========================================="
+      
       - name: Get created tag
         id: get_tag
         run: |
-          # Get the latest tag
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "unknown")
-          echo "Created tag: $latest_tag"
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "no-tag-created")
           echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "Latest tag: $latest_tag"
+      
+      - name: Get created/updated branches
+        id: get_branches
+        run: |
+          # Find branches that might have been created (RC branches typically have -pre. in name)
+          if [ "${{ inputs.release_level }}" = "pre" ]; then
+            rc_branch=$(git branch -a | grep -E '(remotes/origin/)?[0-9]+\.[0-9]+\.[0-9]+-pre\.' | head -1 | sed 's|remotes/origin/||' | xargs || echo "none")
+            echo "rc_branch=$rc_branch" >> $GITHUB_OUTPUT
+            echo "RC Branch: $rc_branch"
+          else
+            echo "rc_branch=none" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Summary
+        run: |
+          echo "## Branch Strategy Execution Summary 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Type | \`${{ inputs.release_type }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Level | \`${{ inputs.release_level }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Script Ref | \`${{ inputs.script_ref }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Created Tag | \`${{ steps.get_tag.outputs.tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| RC Branch | \`${{ steps.get_branches.outputs.rc_branch }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Get all tags created in this run
-          echo "All recent tags:"
-          git tag --sort=-creatordate | head -5
-      
-      # Step 9: Get RC branch if created
-      - name: Get RC branch
-        id: get_branch
-        run: |
-          # Check if an RC branch was created
-          rc_branch=$(git branch -r | grep -E 'origin/.*-pre\.' | head -1 | sed 's/origin\///' | xargs || echo "none")
-          echo "rc_branch=$rc_branch" >> $GITHUB_OUTPUT
-          echo "RC Branch: $rc_branch"
-      
-      # Step 10: Create GitHub Release
-      - name: Create GitHub Release
-        if: steps.get_tag.outputs.tag != 'unknown'
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_tag.outputs.tag }}
-          release_name: Release Candidate ${{ steps.get_tag.outputs.tag }}
-          body: |
-            🚀 Release Candidate created from merge to main
-            
-            **Details:**
-            - Tag: `${{ steps.get_tag.outputs.tag }}`
-            - Branch: `${{ steps.get_branch.outputs.rc_branch }}`
-            - Commit: ${{ github.sha }}
-            - Author: @${{ github.actor }}
-            
-            **Triggered by:** Merge to main
-            
-            This is a pre-release version for testing.
-          draft: false
-          prerelease: true
-      
-      # Step 11: Job summary
-      - name: Job Summary
-        if: always()
-        run: |
-          echo "### Release Candidate Creation Summary 🎉" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Created Tag:** \`${{ steps.get_tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**RC Branch:** \`${{ steps.get_branch.outputs.rc_branch }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Deploy tag \`${{ steps.get_tag.outputs.tag }}\` to staging/test environment" >> $GITHUB_STEP_SUMMARY
-          echo "- Test the release candidate" >> $GITHUB_STEP_SUMMARY
-          echo "- Promote to production when ready" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.script_ref }}" = "master" ]; then
+            echo "### ⚠️ Deprecation Warning" >> $GITHUB_STEP_SUMMARY
+            echo "You are using the deprecated version from the \`master\` branch." >> $GITHUB_STEP_SUMMARY
+            echo "Consider migrating to version 2.x on the \`dev\` branch." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.release_level }}" = "pre" ]; then
+            echo "- ✅ RC tag \`${{ steps.get_tag.outputs.tag }}\` created" >> $GITHUB_STEP_SUMMARY
+            echo "- 🚀 Deploy this tag to your test/staging environment" >> $GITHUB_STEP_SUMMARY
+            echo "- 🧪 Test the release candidate thoroughly" >> $GITHUB_STEP_SUMMARY
+            echo "- 📦 Promote to production when ready" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- ✅ Release tag \`${{ steps.get_tag.outputs.tag }}\` created" >> $GITHUB_STEP_SUMMARY
+            echo "- 🚀 Deploy to production environment" >> $GITHUB_STEP_SUMMARY
+          fi
