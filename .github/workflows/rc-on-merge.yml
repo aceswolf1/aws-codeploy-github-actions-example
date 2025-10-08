@@ -1,46 +1,176 @@
-name: Pre-release on merge to main
+name: Create Release Candidate
 
+# Trigger when a PR is merged to main
 on:
-  pull_request:
-    types: [closed]
-    branches: [main]
-
-permissions:
-  contents: write
-  pull-requests: read
+  push:
+    branches:
+      - main
 
 jobs:
-  pre_release:
-    if: github.event.pull_request.merged == true
+  create-release-candidate:
     runs-on: ubuntu-latest
-
+    
+    permissions:
+      contents: write  # Required to create tags and branches
+    
     steps:
-      - name: Checkout full history
+      # Step 1: Checkout the repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Configure Git identity
+          fetch-depth: 0  # Fetch all history for proper versioning
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Step 2: Configure Git
+      - name: Configure Git
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Download upstream release tool (v2)
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      
+      # Step 3: Set up Node.js (required for nodejs release type)
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'  # Adjust to your project's Node version
+      
+      # Step 4: Install dependencies (if package.json exists)
+      - name: Install dependencies
         run: |
-          curl -s -o release.sh.this https://raw.githubusercontent.com/frontedgedigital/release-management/dev/release.sh.this
-          chmod +x release.sh.this
-
-      # IMPORTANT:
-      # We use --tech 'version' so the tool reads the root ./VERSION file.
-      # We pass level 'dev' and set the pre-release token to 'pre' to get tags like 0.6.0-pre.0.
-      # We also set an empty branch prefix so the branch name is exactly the tag (0.6.0-pre.0).
-      - name: Cut pre-release (tag + matching branch)
+          if [ -f package.json ]; then
+            npm ci || npm install
+          fi
+      
+      # Step 5: Download and prepare the release script
+      - name: Download release management scripts
+        run: |
+          # Create a temporary directory for scripts
+          mkdir -p .release-scripts
+          cd .release-scripts
+          
+          # Set variables (using master for deprecated version)
+          REF="${{ vars.RELEASE_SCRIPT_REF || 'master' }}"
+          TYPES="${{ vars.RELEASE_TYPES || 'nodejs' }}"
+          
+          echo "=========================================="
+          echo "Downloading scripts from ref: $REF"
+          echo "Types: $TYPES"
+          echo "=========================================="
+          
+          # Download the main release script
+          curl -s -f -o release https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release || {
+            echo "Failed to download release script"
+            exit 1
+          }
+          chmod +x release
+          
+          # Download type-specific scripts
+          for type in $TYPES; do
+            echo "Downloading release-$type"
+            curl -s -f -o release-$type https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release-$type || {
+              echo "Failed to download release-$type script"
+              exit 1
+            }
+            chmod +x release-$type
+          done
+          
+          # Download tagging script
+          curl -s -f -o tag-nodejs https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/tag-nodejs || {
+            echo "Warning: Failed to download tag-nodejs script"
+          }
+          chmod +x tag-nodejs 2>/dev/null || true
+          
+          cd ..
+      
+      # Step 6: Execute the release candidate creation
+      - name: Create Release Candidate
         env:
-          MAIN_BRANCH: main
+          HUSKY_SKIP_HOOKS: 1
+          GIT_COMMIT_OPTS: --no-verify
+          GIT_PUSH_OPTS: --no-verify
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ./release.sh.this \
-            --tech version \
-            --main "${MAIN_BRANCH}" \
-            --pre-release-token "pre" \
-            --release-branch-prefix "" \
-            dev
+          cd .release-scripts
+          
+          # Get types and format them (space to plus conversion)
+          TYPES="${{ vars.RELEASE_TYPES || 'nodejs' }}"
+          TYPES_FORMATTED=$(echo -n "$TYPES" | tr ' ' '+')
+          
+          echo "=========================================="
+          echo "Creating Release Candidate"
+          echo "Types: $TYPES_FORMATTED"
+          echo "Release Level: pre"
+          echo "=========================================="
+          
+          # Execute the release script with correct syntax
+          # Usage: ./release <type> <release-level>
+          ./release $TYPES_FORMATTED pre
+          
+          # Return to root directory
+          cd ..
+      
+      # Step 7: Push changes (in case script doesn't auto-push)
+      - name: Push changes
+        run: |
+          echo "Pushing tags and branches..."
+          git push --follow-tags --no-verify || echo "Push completed (may have been already pushed by script)"
+      
+      # Step 8: Output the created tag
+      - name: Get created tag
+        id: get_tag
+        run: |
+          # Get the latest tag
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "unknown")
+          echo "Created tag: $latest_tag"
+          echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+          
+          # Get all tags created in this run
+          echo "All recent tags:"
+          git tag --sort=-creatordate | head -5
+      
+      # Step 9: Get RC branch if created
+      - name: Get RC branch
+        id: get_branch
+        run: |
+          # Check if an RC branch was created
+          rc_branch=$(git branch -r | grep -E 'origin/.*-pre\.' | head -1 | sed 's/origin\///' | xargs || echo "none")
+          echo "rc_branch=$rc_branch" >> $GITHUB_OUTPUT
+          echo "RC Branch: $rc_branch"
+      
+      # Step 10: Create GitHub Release
+      - name: Create GitHub Release
+        if: steps.get_tag.outputs.tag != 'unknown'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          release_name: Release Candidate ${{ steps.get_tag.outputs.tag }}
+          body: |
+            🚀 Release Candidate created from merge to main
+            
+            **Details:**
+            - Tag: `${{ steps.get_tag.outputs.tag }}`
+            - Branch: `${{ steps.get_branch.outputs.rc_branch }}`
+            - Commit: ${{ github.sha }}
+            - Author: @${{ github.actor }}
+            
+            **Triggered by:** Merge to main
+            
+            This is a pre-release version for testing.
+          draft: false
+          prerelease: true
+      
+      # Step 11: Job summary
+      - name: Job Summary
+        if: always()
+        run: |
+          echo "### Release Candidate Creation Summary 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Created Tag:** \`${{ steps.get_tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**RC Branch:** \`${{ steps.get_branch.outputs.rc_branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy tag \`${{ steps.get_tag.outputs.tag }}\` to staging/test environment" >> $GITHUB_STEP_SUMMARY
+          echo "- Test the release candidate" >> $GITHUB_STEP_SUMMARY
+          echo "- Promote to production when ready" >> $GITHUB_STEP_SUMMARY
