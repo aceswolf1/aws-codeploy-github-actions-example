@@ -33,15 +33,14 @@ jobs:
       - name: Run branch strategy helper
         env:
           TYPES: nodejs       # default in your script; keep explicit for clarity
-          REF: master         # branch in the release-management repo to download from
+          REF: dev            # branch in the release-management repo to download from
           # If the helper requires extra envs/flags for prerelease, add them here.
           # Example (uncomment if needed after you verify helper's docs):
           # RELEASE_CHANNEL: pre
           # PRE_ID: pre
         run: |
-          # You can pass arguments if the helper requires, e.g.: ./release ... rc
-          # But since we don't know them yet, we just run your wrapper:
-          scripts/ci/release.sh
+          # call your wrapper with 'pre' so it becomes: ./release nodejs pre
+          scripts/ci/release.sh pre
 
       # --- Fallback: If helper didn't create a tag/branch, we create them ---
       - name: Ensure RC tag & branch exist (fallback)
