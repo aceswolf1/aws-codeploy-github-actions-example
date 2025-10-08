@@ -160,13 +160,8 @@ jobs:
           # The script does 'git pull' to check if we're up to date
           git branch --set-upstream-to=origin/main master
           
-          # Create/update a temporary remote ref for origin/master pointing to origin/main
-          # Must be done AFTER fetch to get the latest origin/main ref
-          git update-ref refs/remotes/origin/master refs/remotes/origin/main
-          
           echo "✓ Now on master branch (pointing to same commit as main)"
           echo "✓ Tracking origin/main"
-          echo "✓ Created origin/master reference pointing to origin/main"
           git branch --show-current
           git status
       
