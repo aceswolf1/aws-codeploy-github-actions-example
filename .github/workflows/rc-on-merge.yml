@@ -187,6 +187,9 @@ jobs:
           echo "Script location: $SCRIPT_DIR/release"
           echo "=========================================="
           
+          # Configure git to push master to origin/main
+          git config push.default upstream
+          
           # Add the script directory to PATH so release script can find its dependencies
           export PATH="$SCRIPT_DIR:$PATH"
           
