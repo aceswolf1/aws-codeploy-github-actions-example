@@ -89,8 +89,6 @@ jobs:
           GIT_PUSH_OPTS: --no-verify
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd .release-scripts
-          
           # Get types and format them (space to plus conversion)
           TYPES="${{ vars.RELEASE_TYPES || 'nodejs' }}"
           TYPES_FORMATTED=$(echo -n "$TYPES" | tr ' ' '+')
@@ -99,14 +97,14 @@ jobs:
           echo "Creating Release Candidate"
           echo "Types: $TYPES_FORMATTED"
           echo "Release Level: pre"
+          echo "Working Directory: $(pwd)"
+          echo "Package.json exists: $([ -f package.json ] && echo 'YES' || echo 'NO')"
           echo "=========================================="
           
-          # Execute the release script with correct syntax
+          # Execute the release script from root directory
+          # The scripts need to find package.json in the current directory
           # Usage: ./release <type> <release-level>
-          ./release $TYPES_FORMATTED pre
-          
-          # Return to root directory
-          cd ..
+          ./.release-scripts/release $TYPES_FORMATTED pre
       
       # Step 7: Push changes (in case script doesn't auto-push)
       - name: Push changes
