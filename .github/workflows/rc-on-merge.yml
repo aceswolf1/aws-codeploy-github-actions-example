@@ -2,15 +2,15 @@ name: RC on merge to main
 
 on:
   pull_request:
-    types: [closed]          # fires when a PR is closed
-    branches: [main]         # and it targets main
+    types: [closed]
+    branches: [main]
 
 permissions:
-  contents: write            # needed to push tags/branches
+  contents: write
   pull-requests: read
 
 jobs:
-  create-rc:
+  create-pre:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
@@ -18,82 +18,15 @@ jobs:
       - name: Checkout full history
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0     # so we can tag and push
+          fetch-depth: 0
 
-      - name: Setup Git identity (bot)
+      - name: Configure Git identity
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # --- Run YOUR provided wrapper script ---
-      # Put your wrapper in ./scripts/ci/release.sh in your repo.
-      - name: Make wrapper executable
-        run: chmod +x scripts/ci/release.sh
-
-      - name: Run branch strategy helper
+      - name: Run rel (pre-release off main)
         env:
-          TYPES: nodejs       # default in your script; keep explicit for clarity
-          REF: dev            # branch in the release-management repo to download from
-          # If the helper requires extra envs/flags for prerelease, add them here.
-          # Example (uncomment if needed after you verify helper's docs):
-          # RELEASE_CHANNEL: pre
-          # PRE_ID: pre
+          MASTER: main
         run: |
-          # call your wrapper with 'pre' so it becomes: ./release nodejs pre
-          scripts/ci/release.sh pre
-
-      # --- Fallback: If helper didn't create a tag/branch, we create them ---
-      - name: Ensure RC tag & branch exist (fallback)
-        id: rcgen
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # 1) Read current version (tries package.json first, else 0.1.0)
-          if [ -f package.json ]; then
-            CURR_VER=$(node -p "require('./package.json').version" 2>/dev/null || true)
-          fi
-          if [ -z "${CURR_VER:-}" ]; then
-            CURR_VER="0.1.0"
-          fi
-
-          # 2) Find the latest pre tag for this base version, e.g. 0.6.0-pre.3
-          BASE=$(echo "$CURR_VER" | sed 's/-pre\..*$//')  # strip any existing -pre.N
-          LAST_PRE=$(git tag --list "${BASE}-pre.*" | sort -V | tail -n1 || true)
-
-          if [ -n "$LAST_PRE" ]; then
-            # increment N
-            N=$(echo "$LAST_PRE" | sed -n 's/^.*-pre\.\([0-9]\+\).*$/\1/p')
-            NEXT_N=$((N+1))
-          else
-            NEXT_N=0
-          fi
-
-          NEXT_TAG="${BASE}-pre.${NEXT_N}"
-          RC_BRANCH="rc/${NEXT_TAG}"
-
-          echo "base_version=$BASE" >> "$GITHUB_OUTPUT"
-          echo "next_tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
-          echo "rc_branch=$RC_BRANCH" >> "$GITHUB_OUTPUT"
-
-          # If tag already exists (maybe helper created it), do nothing
-          if git rev-parse -q --verify "refs/tags/${NEXT_TAG}" >/dev/null; then
-            echo "Tag ${NEXT_TAG} already exists. Skipping fallback."
-            exit 0
-          fi
-
-          # Create annotated tag and RC branch at current HEAD of main
-          git checkout main
-          git pull --ff-only
-          git tag -a "$NEXT_TAG" -m "Release Candidate $NEXT_TAG"
-          git branch "$RC_BRANCH" || true
-
-          # Push both
-          git push origin "refs/tags/${NEXT_TAG}"
-          git push origin "$RC_BRANCH"
-
-      - name: Summary
-        run: |
-          echo "Created/Confirmed RC:"
-          echo "  Tag:     ${{ steps.rcgen.outputs.next_tag }}"
-          echo "  Branch:  ${{ steps.rcgen.outputs.rc_branch }}"
+          ./rel version pre
