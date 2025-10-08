@@ -143,27 +143,18 @@ jobs:
           echo "Final git status:"
           git status --short
       
-      # Step 6b: Create temporary master branch for release script compatibility
-      - name: Setup master branch for release script
+      # Step 6b: Create master branch on remote
+      - name: Create master branch
         run: |
-          echo "Creating temporary master branch pointing to main..."
+          echo "Creating master branch from main..."
           
-          # Fetch latest changes
-          git fetch origin main
+          # Create master branch locally pointing to main
+          git checkout -b master
           
-          # The release script checks for 'master' branch
-          # Create master branch pointing to current commit
-          git branch -f master HEAD
-          git checkout master
+          # Push master to remote (creates it on GitHub)
+          git push origin master
           
-          # Set up tracking so git pull works
-          # The script does 'git pull' to check if we're up to date
-          git branch --set-upstream-to=origin/main master
-          
-          echo "✓ Now on master branch (pointing to same commit as main)"
-          echo "✓ Tracking origin/main"
-          git branch --show-current
-          git status
+          echo "✓ Master branch created on GitHub"
       
       # Step 7: Execute the release candidate creation
       - name: Create Release Candidate
@@ -185,6 +176,13 @@ jobs:
           echo "Package.json exists: $([ -f package.json ] && echo 'YES' || echo 'NO')"
           echo "Script location: $SCRIPT_DIR/release"
           echo "=========================================="
+          
+          # IMPORTANT: Update origin/master reference right before running the release script
+          # The script will do its own 'git fetch' which would show the mismatch otherwise
+          # We need to ensure that after the internal fetch, origin/master still points to origin/main
+          git fetch origin main
+          git update-ref refs/remotes/origin/master refs/remotes/origin/main
+          echo "✓ Updated origin/master to point to origin/main"
           
           # Configure git to push master to origin/main
           git config push.default upstream
