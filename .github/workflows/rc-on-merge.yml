@@ -81,7 +81,7 @@ jobs:
           
           # Check if using deprecated version
           if [ "$REF" = "master" ]; then
-            echo "⚠️  WARNING: Using deprecated version from 'master' branch"
+            echo " WARNING: Using deprecated version from 'master' branch"
             echo "   Consider migrating to version 2.x on 'dev' branch"
             echo ""
           fi
@@ -89,7 +89,7 @@ jobs:
           # Download scripts with error handling
           echo "Downloading release script..."
           curl -s -f -o release https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release || {
-            echo "❌ Failed to download release script from ref: $REF"
+            echo "Failed to download release script from ref: $REF"
             exit 1
           }
           chmod +x release
@@ -101,7 +101,7 @@ jobs:
             for single_type in "${TYPE_ARRAY[@]}"; do
               echo "Downloading release-$single_type..."
               curl -s -f -o release-$single_type https://raw.githubusercontent.com/frontedgedigital/release-management/$REF/release-$single_type || {
-                echo "❌ Failed to download release-$single_type"
+                echo "Failed to download release-$single_type"
                 exit 1
               }
               chmod +x release-$single_type
@@ -171,12 +171,12 @@ jobs:
           
           # Show latest tags
           echo ""
-          echo "📌 Latest tags:"
+          echo "Latest tags:"
           git tag --sort=-creatordate | head -5
           
           # Show all branches
           echo ""
-          echo "🌿 All branches:"
+          echo "All branches:"
           git branch -a | grep -v HEAD
           
           # Show current branch
@@ -186,7 +186,7 @@ jobs:
           
           # Show recent commits
           echo ""
-          echo "📝 Recent commits:"
+          echo "Recent commits:"
           git log --oneline --graph -10
           
           echo "=========================================="
@@ -238,11 +238,11 @@ jobs:
           
           echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
           if [ "${{ inputs.release_level }}" = "pre" ]; then
-            echo "- ✅ RC tag \`${{ steps.get_tag.outputs.tag }}\` created" >> $GITHUB_STEP_SUMMARY
-            echo "- 🚀 Deploy this tag to your test/staging environment" >> $GITHUB_STEP_SUMMARY
-            echo "- 🧪 Test the release candidate thoroughly" >> $GITHUB_STEP_SUMMARY
-            echo "- 📦 Promote to production when ready" >> $GITHUB_STEP_SUMMARY
+            echo "- RC tag \`${{ steps.get_tag.outputs.tag }}\` created" >> $GITHUB_STEP_SUMMARY
+            echo "- Deploy this tag to your test/staging environment" >> $GITHUB_STEP_SUMMARY
+            echo "- Test the release candidate thoroughly" >> $GITHUB_STEP_SUMMARY
+            echo "- Promote to production when ready" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- ✅ Release tag \`${{ steps.get_tag.outputs.tag }}\` created" >> $GITHUB_STEP_SUMMARY
-            echo "- 🚀 Deploy to production environment" >> $GITHUB_STEP_SUMMARY
+            echo "- Release tag \`${{ steps.get_tag.outputs.tag }}\` created" >> $GITHUB_STEP_SUMMARY
+            echo "- Deploy to production environment" >> $GITHUB_STEP_SUMMARY
           fi
