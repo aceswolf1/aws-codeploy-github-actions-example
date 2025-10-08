@@ -4,11 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            color: #333;
+        }
+        p {
+            color: #666;
+        }
+        .card {
+            list-style-type: none;
+            padding: 0;
+        }
+        .card li {
+            background: #fff;
+            margin: 10px;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
 </head>
 <body>
     <h1>It works! 🚀</h1>
     <p>Deployed by CodeDeploy.</p>
-    <ul>
+    <ul class="card">
         <li><a href="https://github.com/cace/demo-app">GitHub Repository</a></li>
         <li><a href="https://aws.amazon.com/codedeploy/">AWS CodeDeploy</a></li>
         <li><a href="https://aws.amazon.com/elastic-beanstalk/">AWS Elastic Beanstalk</a></li>
