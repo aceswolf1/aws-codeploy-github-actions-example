@@ -151,8 +151,15 @@ jobs:
           # Create master branch pointing to current commit
           git branch -f master HEAD
           git checkout master
+          
+          # Set up tracking so git pull works
+          # The script does 'git pull' to check if we're up to date
+          git branch --set-upstream-to=origin/main master
+          
           echo "✓ Now on master branch (pointing to same commit as main)"
+          echo "✓ Tracking origin/main"
           git branch --show-current
+          git status
       
       # Step 7: Execute the release candidate creation
       - name: Create Release Candidate
@@ -187,6 +194,9 @@ jobs:
       - name: Push changes
         run: |
           echo "Pushing tags and branches..."
+          # Switch back to main before pushing
+          git checkout main
+          # Push everything
           git push --all --no-verify || echo "Branches already pushed"
           git push --tags --no-verify || echo "Tags already pushed"
       
