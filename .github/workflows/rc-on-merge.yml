@@ -44,12 +44,13 @@ jobs:
             fi
           fi
       
-      # Step 5: Download and prepare the release script
+      # Step 5: Download release scripts to /tmp (outside git)
       - name: Download release management scripts
         run: |
-          # Create a temporary directory for scripts
-          mkdir -p .release-scripts
-          cd .release-scripts
+          # Use /tmp to avoid git tracking issues
+          SCRIPT_DIR="/tmp/release-scripts-$$"
+          mkdir -p "$SCRIPT_DIR"
+          cd "$SCRIPT_DIR"
           
           # Set variables (using master for deprecated version)
           REF="${{ vars.RELEASE_SCRIPT_REF || 'master' }}"
@@ -58,6 +59,7 @@ jobs:
           echo "=========================================="
           echo "Downloading scripts from ref: $REF"
           echo "Types: $TYPES"
+          echo "Script directory: $SCRIPT_DIR"
           echo "=========================================="
           
           # Download the main release script
@@ -83,9 +85,45 @@ jobs:
           }
           chmod +x tag-nodejs 2>/dev/null || true
           
-          cd ..
+          # Save script directory for next steps
+          echo "SCRIPT_DIR=$SCRIPT_DIR" >> $GITHUB_ENV
+          
+          cd "$GITHUB_WORKSPACE"
       
-      # Step 6: Execute the release candidate creation
+      # Step 6: Ensure clean git working directory
+      - name: Clean git working directory
+        run: |
+          echo "Checking git status..."
+          git status
+          
+          # Show untracked files
+          echo ""
+          echo "Untracked files:"
+          git ls-files --others --exclude-standard
+          
+          # If there are any untracked files (like .release-scripts/), add them to .gitignore
+          if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+            echo ""
+            echo "Adding untracked files to .gitignore..."
+            
+            # Create or append to .gitignore
+            if [ ! -f .gitignore ]; then
+              touch .gitignore
+            fi
+            
+            # Add .release-scripts if it exists and not already ignored
+            if [ -d .release-scripts ] && ! grep -q ".release-scripts" .gitignore 2>/dev/null; then
+              echo ".release-scripts/" >> .gitignore
+              git add .gitignore
+              git commit -m "chore: ignore release scripts directory [skip ci]"
+            fi
+          fi
+          
+          echo ""
+          echo "Final git status:"
+          git status --short
+      
+      # Step 7: Execute the release candidate creation
       - name: Create Release Candidate
         env:
           HUSKY_SKIP_HOOKS: 1
@@ -103,12 +141,16 @@ jobs:
           echo "Release Level: pre"
           echo "Working Directory: $(pwd)"
           echo "Package.json exists: $([ -f package.json ] && echo 'YES' || echo 'NO')"
+          echo "Script location: $SCRIPT_DIR/release"
           echo "=========================================="
+          
+          # Add the script directory to PATH so release script can find its dependencies
+          export PATH="$SCRIPT_DIR:$PATH"
           
           # Execute the release script from root directory
           # The scripts need to find package.json in the current directory
           # Usage: ./release <type> <release-level>
-          ./.release-scripts/release $TYPES_FORMATTED pre
+          "$SCRIPT_DIR/release" $TYPES_FORMATTED pre
       
       # Step 7: Push changes (in case script doesn't auto-push)
       - name: Push changes
