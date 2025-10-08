@@ -147,6 +147,10 @@ jobs:
       - name: Setup master branch for release script
         run: |
           echo "Creating temporary master branch pointing to main..."
+          
+          # Fetch latest changes
+          git fetch origin main
+          
           # The release script checks for 'master' branch
           # Create master branch pointing to current commit
           git branch -f master HEAD
@@ -156,8 +160,8 @@ jobs:
           # The script does 'git pull' to check if we're up to date
           git branch --set-upstream-to=origin/main master
           
-          # Create a temporary remote ref for origin/master pointing to origin/main
-          # The script compares local master with origin/master
+          # Create/update a temporary remote ref for origin/master pointing to origin/main
+          # Must be done AFTER fetch to get the latest origin/main ref
           git update-ref refs/remotes/origin/master refs/remotes/origin/main
           
           echo "✓ Now on master branch (pointing to same commit as main)"
@@ -204,9 +208,47 @@ jobs:
           echo "Pushing tags and branches..."
           # Switch back to main before pushing
           git checkout main
-          # Push everything
-          git push --all --no-verify || echo "Branches already pushed"
-          git push --tags --no-verify || echo "Tags already pushed"
+          
+          # Delete the temporary master branch locally (don't push it to GitHub)
+          git branch -D master || echo "Master branch already deleted"
+          
+          # Push main branch (which now has the release commit)
+          git push origin main --no-verify || echo "Main branch already pushed"
+          
+          # Push all tags
+          git push origin --tags --no-verify || echo "Tags already pushed"
+          
+          # Make sure no master branch was pushed to remote
+          git push origin --delete master 2>/dev/null || echo "No remote master branch to delete"
+      
+      # Step 8b: Create RC branch from the tag
+      - name: Create RC branch
+        run: |
+          # Get the latest tag (the one we just created)
+          LATEST_TAG=$(git describe --tags --abbrev=0)
+          echo "Latest tag: $LATEST_TAG"
+          
+          # Check if it's a pre-release tag
+          if [[ $LATEST_TAG =~ -pre\. ]]; then
+            # Extract version without 'v' prefix if present
+            RC_VERSION=${LATEST_TAG#v}
+            RC_BRANCH="rc/$RC_VERSION"
+            
+            echo "Creating RC branch: $RC_BRANCH"
+            
+            # Create branch from the tag
+            git checkout -b "$RC_BRANCH" "$LATEST_TAG"
+            
+            # Push the RC branch to remote
+            git push origin "$RC_BRANCH" --no-verify
+            
+            echo "✓ Created and pushed RC branch: $RC_BRANCH"
+          else
+            echo "Not a pre-release tag, skipping RC branch creation"
+          fi
+          
+          # Switch back to main
+          git checkout main
       
       # Step 9: Output the created tag
       - name: Get created tag
@@ -222,16 +264,32 @@ jobs:
           git tag --sort=-creatordate | head -5
       
       # Step 10: Get RC branch if created
-      - name: Get RC branch
+      - name: Get RC branch info
         id: get_branch
         run: |
-          # Fetch all branches
+          # Get the latest tag
+          LATEST_TAG=$(git describe --tags --abbrev=0)
+          
+          # Fetch all branches to see the newly created one
           git fetch --all
           
-          # Check if an RC branch was created
-          rc_branch=$(git branch -r | grep -E 'origin/.*-pre\.' | head -1 | sed 's/origin\///' | xargs || echo "none")
-          echo "rc_branch=$rc_branch" >> $GITHUB_OUTPUT
-          echo "RC Branch: $rc_branch"
+          # Check if it's a pre-release and get the RC branch name
+          if [[ $LATEST_TAG =~ -pre\. ]]; then
+            RC_VERSION=${LATEST_TAG#v}
+            RC_BRANCH="rc/$RC_VERSION"
+            
+            # Verify the branch exists on remote
+            if git ls-remote --heads origin "$RC_BRANCH" | grep -q "$RC_BRANCH"; then
+              echo "rc_branch=$RC_BRANCH" >> $GITHUB_OUTPUT
+              echo "RC Branch: $RC_BRANCH"
+            else
+              echo "rc_branch=none" >> $GITHUB_OUTPUT
+              echo "RC Branch creation may have failed"
+            fi
+          else
+            echo "rc_branch=none" >> $GITHUB_OUTPUT
+            echo "Not a pre-release"
+          fi
       
       # Step 11: Create GitHub Release
       - name: Create GitHub Release
