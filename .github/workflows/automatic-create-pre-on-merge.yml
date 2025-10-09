@@ -9,7 +9,7 @@ on:
 jobs:
   create-release-candidate:
     runs-on: ubuntu-latest
-    
+    if: ${{ !startsWith(github.event.head_commit.message, 'release') && !endsWith(github.event.head_commit.message, '.[0-9]+') }}
     permissions:
       contents: write  # Required to create tags and branches
     
