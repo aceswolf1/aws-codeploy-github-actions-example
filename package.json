@@ -1,6 +1,6 @@
 {
     "name": "test-app",
-    "version": "0.0.0-pre.42",
+    "version": "0.0.0-pre.43",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1"
     },
