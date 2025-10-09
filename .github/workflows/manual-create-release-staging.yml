@@ -1,3 +1,5 @@
+name: Manual release for staging
+
 on: 
   workflow_dispatch:
     inputs:
@@ -5,8 +7,6 @@ on:
         description: 'Staging branch to checkout and deploy a hot fix'
         required: false
         default: ''
-
-name: Manual release for staging
 jobs:
   release-staging:
     runs-on: ubuntu-latest
