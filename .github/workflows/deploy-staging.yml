@@ -1,0 +1,17 @@
+name: Deploy to AWS EC2 via CodeDeploy
+
+on:
+  push:
+    tags:
+      - '*staging*'
+
+jobs:
+  deploy:
+    name: Trigger AWS CodeDeploy Deployment
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Call Reusable-Deploy Workflow
+      - name: Call Reusable-Deploy Workflow
+        run: |
+          echo "Deploying ${{ github.ref }} to staging environment"

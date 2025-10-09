@@ -1,0 +1,19 @@
+name: Deploy to AWS EC2 via CodeDeploy
+
+on:
+  push:
+    tags:
+      - '*pre*'
+
+jobs:
+  deploy:
+    name: Trigger AWS CodeDeploy Deployment
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Call Reusable-Deploy Workflow
+      - name: Call Reusable-Deploy Workflow
+        uses: ./.github/workflows/reusable-deploy.yml
+        with:
+          stage: dev
+          ref: ${{ github.ref }}

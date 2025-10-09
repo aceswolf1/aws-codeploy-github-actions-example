@@ -1,0 +1,53 @@
+name: Reusable Deploy Workflow
+on: 
+  workflow_call:
+    inputs:
+      stage:
+        description: 'The stage'
+        required: true
+        type: string
+      ref:
+        description: 'The branch or tag to deploy'
+        required: true
+        type: string
+        
+jobs:
+  deploy-app:
+    runs-on: ubuntu-latest
+    name: ${{ inputs.ref }} - ${{ inputs.stage }}
+    env:
+        ZIP_NAME: demo-web-${{ inputs.ref }}-${{ inputs.stage }}.zip
+    steps:
+      # Step 1: Checkout the specified branch/tag
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      # Step 2: Configure AWS credentials (using IAM user + access keys)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Step 3: Zip the app before uploading to S3
+      - name: Prepare deployment package
+        run: |
+          zip -r demo-web-tmp.zip . -x ".git/*" ".github/*" "*.DS_Store"
+
+      # Step 4: Upload artifact to S3 bucket
+      - name: Upload deployment package to S3
+        run: |
+          aws s3 cp demo-web-tmp.zip s3://demo-app-bucket-720680604205-us-east-1-da2300bc/${{ env.ZIP_NAME }}
+
+      # Step 5: Trigger CodeDeploy deployment
+      - name: Trigger CodeDeploy deployment
+        run: |
+          aws deploy create-deployment \
+            --application-name cace-codedeploy-demo-app \
+            --deployment-group-name cace-codedeploy-demo-dg \
+            --s3-location "bucket=demo-app-bucket-720680604205-us-east-1-da2300bc,key=${{ env.ZIP_NAME }},bundleType=zip" \
+            --region us-east-1
