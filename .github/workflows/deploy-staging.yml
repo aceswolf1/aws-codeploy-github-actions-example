@@ -6,12 +6,10 @@ on:
       - '*staging*'
 
 jobs:
-  deploy:
+  deploy-staging:
     name: Trigger AWS CodeDeploy Deployment
-    runs-on: ubuntu-latest
-
-    steps:
-      # Step 1: Call Reusable-Deploy Workflow
-      - name: Call Reusable-Deploy Workflow
-        run: |
-          echo "Deploying ${{ github.ref }} to staging environment"
+    uses: aceswolf1/aws-codeploy-github-actions-example/.github/workflows/reusable-deploy.yml@main
+    with:
+      stage: staging
+      ref: ${{ github.ref }}
+    secrets: inherit # Inherit all secrets from the calling workflow
