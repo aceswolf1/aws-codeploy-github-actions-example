@@ -143,23 +143,6 @@ jobs:
           echo "Final git status:"
           git status --short
       
-      # Step 6b: Create master branch on remote
-      - name: Create master branch
-        run: |
-          echo "Creating master branch from main..."
-          
-          # Create master branch locally pointing to main
-          git checkout -b master
-          
-          # Push master to remote (creates it on GitHub)
-          git push origin master
-          
-          # Set up tracking so git pull works
-          git branch --set-upstream-to=origin/master master
-          
-          echo "✓ Master branch created on GitHub"
-          echo "✓ Tracking set up"
-      
       # Step 7: Execute the release candidate creation
       - name: Create Release Candidate
         env:
@@ -185,7 +168,7 @@ jobs:
           export PATH="$SCRIPT_DIR:$PATH"
           
           # Execute the release script from root directory
-          # The script now sees a real master branch on origin, so it works normally!
+          # The script now works with a real master branch!
           # Usage: ./release <type> <release-level>
           "$SCRIPT_DIR/release" $TYPES_FORMATTED pre
       
