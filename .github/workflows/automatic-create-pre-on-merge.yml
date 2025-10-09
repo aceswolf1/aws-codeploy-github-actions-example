@@ -1,0 +1,27 @@
+name: Create Release Candidate
+
+# Trigger when a PR is merged to main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-release-candidate:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write  # Required to create tags and branches
+    
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_DEPLOYMENT }}
+      - name: Start release
+        run: |
+          git status
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          MASTER=main ./release nodejs pre
+      

@@ -1,0 +1,96 @@
+name: Manual Deploy to Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or tag to deploy'
+        required: true
+        default: 'main'
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
+
+jobs:
+  deploy:
+    name: Manual Deployment to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    env:
+      S3_BUCKET: demo-app-bucket-720680604205-us-east-1-da2300bc
+      codeDeployAppName: DemoApp
+      codeDeployGroupName: DemoApp-DeploymentGroup
+
+    steps:
+      # Step 1: Checkout the specified branch/tag
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+
+      # Step 2: Configure AWS credentials (using IAM user + access keys)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Step 3: Set commit hash variables
+      - name: Set commit hash variables
+        run: |
+          COMMIT_HASH=$(git rev-parse HEAD)
+          SHORT_COMMIT_HASH=$(echo $COMMIT_HASH | cut -c1-7)
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_ENV
+          echo "SHORT_COMMIT_HASH=$SHORT_COMMIT_HASH" >> $GITHUB_ENV
+          echo "DEPLOYMENT_REF=${{ inputs.ref }}" >> $GITHUB_ENV
+      
+      # Step 4: Prepare deployment package
+      - name: Prepare deployment package
+        run: |
+          echo "Creating package for ref: $DEPLOYMENT_REF"
+          echo "Commit: $COMMIT_HASH (short: $SHORT_COMMIT_HASH)"
+          echo "Target environment: ${{ inputs.environment }}"
+          mkdir -p .tmp/bundles
+          git archive --format zip --output .tmp/bundles/${SHORT_COMMIT_HASH}.zip HEAD
+
+      # Step 5: Upload deployment package to S3
+      - name: Upload deployment package to S3
+        run: |
+          aws s3 cp .tmp/bundles/$SHORT_COMMIT_HASH.zip s3://${{ env.S3_BUCKET }}/$SHORT_COMMIT_HASH.zip
+
+      # Step 6: Trigger CodeDeploy deployment
+      - name: Trigger CodeDeploy deployment
+        run: |
+          echo "=========================================="
+          echo "Manual Deployment Summary"
+          echo "=========================================="
+          echo "Ref/Branch/Tag: $DEPLOYMENT_REF"
+          echo "Commit Hash: $COMMIT_HASH (short: $SHORT_COMMIT_HASH)"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "CodeDeploy App: ${{ env.codeDeployAppName }}"
+          echo "Deployment Group: ${{ env.codeDeployGroupName }}"
+          echo "S3 Package: s3://${{ env.S3_BUCKET }}/$SHORT_COMMIT_HASH.zip"
+          echo "=========================================="
+          
+          aws deploy create-deployment \
+            --description "Manual deployment of $DEPLOYMENT_REF ($COMMIT_HASH) to ${{ inputs.environment }}" \
+            --application-name ${{ env.codeDeployAppName }} \
+            --deployment-group-name ${{ env.codeDeployGroupName }} \
+            --s3-location bucket=${{ env.S3_BUCKET }},key=$SHORT_COMMIT_HASH.zip,bundleType=zip \
+            --ignore-application-stop-failures
+
+      # Step 7: Deployment confirmation
+      - name: Deployment confirmation
+        run: |
+          echo "✅ Deployment initiated successfully!"
+          echo "📦 Package: $SHORT_COMMIT_HASH.zip"
+          echo "🌍 Environment: ${{ inputs.environment }}"
+          echo "🔖 Ref: $DEPLOYMENT_REF"
